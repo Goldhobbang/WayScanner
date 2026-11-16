@@ -2,7 +2,6 @@
 
 담당: 본인. 알고리즘 이름은 A*다.
 이 파일은 pygame을 모르고, 배터리 잔량도 계산하지 않는다.
-거리와 회전 횟수만 경로의 속성으로 남겨, 나중에 배터리 파일이 그대로 받게 한다.
 
 pygame에서는 위험 구역을 만든 다음에만 부른다.
 
@@ -15,21 +14,19 @@ pygame에서는 위험 구역을 만든 다음에만 부른다.
 
 from __future__ import annotations
 
-import heapq
 from typing import Iterable, NamedTuple, Sequence
 
-from hazard_zone import Keepout, contains
+from hazard_zone import Keepout
 
 
 Cell = tuple[int, int]
-_DIRECTIONS: tuple[Cell, ...] = ((1, 0), (-1, 0), (0, 1), (0, -1))
 
 
 class Route(NamedTuple):
     """찾아낸 회피 경로.
 
     cells는 출발지와 목적지를 포함한 칸 순서다.
-    distance는 칸 이동 횟수다. 네 방향 이동에서는 경로 길이 - 1과 같다.
+    distance는 칸 이동 횟수다.
     turns는 진행 방향이 바뀐 횟수다. 첫 이동은 회전이 아니다.
     """
 
@@ -48,45 +45,12 @@ def find(
 ) -> Route | None:
     """최단 회피 경로를 찾는다. 없으면 None.
 
-    이동은 상하좌우만이다. 대각은 허용하지 않는다.
-    평가값은 f(n) = g(n) + h(n)이고, h(n)은 맨해튼 거리다.
-    이 휴리스틱은 실제 남은 칸 수보다 크지 않으므로 최단 경로를 보장한다.
+    이동은 상하좌우만이다.
+    평가값은 f(n) = g(n) + h(n)이고, h(n)은 실제 남은 비용보다 크면 안 된다.
+    출발지나 목적지가 막혀 있으면 None이다.
     """
 
-    if not isinstance(width, int) or not isinstance(height, int) or width <= 0 or height <= 0:
-        raise ValueError("지도 크기는 양의 정수여야 합니다.")
-    start_cell = _cell(start, "출발지")
-    goal_cell = _cell(goal, "목적지")
-    blocked = forbidden_cells(width, height, obstacles, zone)
-    if not _inside_map(start_cell, width, height) or not _inside_map(goal_cell, width, height):
-        return None
-    if start_cell in blocked or goal_cell in blocked:
-        return None
-    if start_cell == goal_cell:
-        return Route((start_cell,), 0, 0)
-
-    open_set: list[tuple[int, int, Cell]] = [(_manhattan(start_cell, goal_cell), 0, start_cell)]
-    came_from: dict[Cell, Cell] = {}
-    cost_so_far: dict[Cell, int] = {start_cell: 0}
-
-    while open_set:
-        _, cost, current = heapq.heappop(open_set)
-        if cost != cost_so_far.get(current):
-            continue
-        if current == goal_cell:
-            cells = _reconstruct(came_from, current)
-            return Route(cells, len(cells) - 1, count_turns(cells))
-        for neighbor in _neighbors(current):
-            if not _inside_map(neighbor, width, height) or neighbor in blocked:
-                continue
-            next_cost = cost + 1
-            if next_cost >= cost_so_far.get(neighbor, next_cost + 1):
-                continue
-            cost_so_far[neighbor] = next_cost
-            came_from[neighbor] = current
-            priority = next_cost + _manhattan(neighbor, goal_cell)
-            heapq.heappush(open_set, (priority, next_cost, neighbor))
-    return None
+    raise NotImplementedError
 
 
 def forbidden_cells(
@@ -97,66 +61,13 @@ def forbidden_cells(
 ) -> set[Cell]:
     """경로가 들어가면 안 되는 칸.
 
-    일반 장애물, 위험 점 자체, 볼록 다각형의 내부와 경계가 포함된다.
-    pygame은 이 집합을 금지구역 색으로 칠하면 된다. 알고리즘을 다시 짤 필요는 없다.
+    일반 장애물, 위험 점 자체, 볼록 다각형의 내부와 경계를 포함한다.
     """
 
-    if zone is None:
-        zone = Keepout("none", (), ())
-    blocked = {_cell(point, "장애물") for point in obstacles}
-    blocked.update(zone.points)
-    if zone.status == "polygon":
-        for y in range(height):
-            for x in range(width):
-                if contains(zone, (x, y)):
-                    blocked.add((x, y))
-    return {cell for cell in blocked if _inside_map(cell, width, height)}
+    raise NotImplementedError
 
 
 def count_turns(cells: Sequence[Cell]) -> int:
     """방향이 바뀐 횟수. 직선이면 0이다."""
 
-    if len(cells) < 3:
-        return 0
-    turns = 0
-    previous = _direction(cells[0], cells[1])
-    for index in range(1, len(cells) - 1):
-        direction = _direction(cells[index], cells[index + 1])
-        if direction != previous:
-            turns += 1
-            previous = direction
-    return turns
-
-
-def _neighbors(cell: Cell) -> tuple[Cell, ...]:
-    x, y = cell
-    return tuple((x + dx, y + dy) for dx, dy in _DIRECTIONS)
-
-
-def _reconstruct(came_from: dict[Cell, Cell], goal: Cell) -> tuple[Cell, ...]:
-    cells = [goal]
-    while cells[-1] in came_from:
-        cells.append(came_from[cells[-1]])
-    cells.reverse()
-    return tuple(cells)
-
-
-def _manhattan(a: Cell, b: Cell) -> int:
-    return abs(a[0] - b[0]) + abs(a[1] - b[1])
-
-
-def _direction(a: Cell, b: Cell) -> Cell:
-    return (b[0] - a[0], b[1] - a[1])
-
-
-def _inside_map(cell: Cell, width: int, height: int) -> bool:
-    return 0 <= cell[0] < width and 0 <= cell[1] < height
-
-
-def _cell(value: Sequence[int], label: str) -> Cell:
-    if isinstance(value, (str, bytes)) or len(value) != 2:
-        raise TypeError(f"{label}은 (x, y) 칸 좌표여야 합니다.")
-    x, y = value
-    if isinstance(x, bool) or isinstance(y, bool) or not isinstance(x, int) or not isinstance(y, int):
-        raise TypeError(f"{label} 좌표는 정수 칸이어야 합니다.")
-    return (x, y)
+    raise NotImplementedError
