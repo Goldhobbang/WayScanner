@@ -18,6 +18,11 @@ GRID_HEIGHT = 26
 CELL_SIZE = 24
 START = (1, 1)
 GOAL = (GRID_WIDTH - 2, GRID_HEIGHT - 2)
+HILL_CENTERS = (
+    (GRID_WIDTH // 4, GRID_HEIGHT // 4),
+    (GRID_WIDTH * 3 // 4, GRID_HEIGHT * 3 // 4),
+)
+HILL_COLORS = ("#fef3c7", "#fde68a", "#fcd34d", "#fbbf24", "#f59e0b")
 
 COLORS = {
     "background": "#f8fafc",
@@ -31,6 +36,16 @@ COLORS = {
 }
 
 
+def hill_elevations() -> dict[pathfinder.Cell, int]:
+    elevations = {}
+    for y in range(GRID_HEIGHT):
+        for x in range(GRID_WIDTH):
+            distance = min(abs(x - cx) + abs(y - cy) for cx, cy in HILL_CENTERS)
+            if distance < len(HILL_COLORS):
+                elevations[x, y] = len(HILL_COLORS) - distance
+    return elevations
+
+
 class WayScannerApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
@@ -40,6 +55,7 @@ class WayScannerApp:
         self.zone = hazard_zone.Keepout("none", (), ())
         self.hazards: list[tuple[int, int]] = []
         self.obstacles: set[tuple[int, int]] = set()
+        self.elevations = hill_elevations()
         self.route: pathfinder.Route | None = None
         self.status = tk.StringVar(value="새 지도를 생성했습니다. 경로 찾기를 눌러 보세요.")
         self.metrics = tk.StringVar(value="경로 정보가 여기에 표시됩니다.")
@@ -87,7 +103,7 @@ class WayScannerApp:
         ).grid(row=8, column=0, sticky="w", pady=4)
         ttk.Label(
             panel,
-            text="범례\n■ 위험 구역  ■ 장애물\n■ 경로      ■ 출발 / 목적지",
+            text="범례\n■ 위험 구역  ■ 장애물\n■ 경로      ■ 출발 / 목적지\n■ 언덕 (색이 진할수록 높음)",
             justify="left",
         ).grid(row=9, column=0, sticky="w", pady=(14, 0))
 
@@ -132,6 +148,7 @@ class WayScannerApp:
             GOAL,
             self.obstacles,
             self.zone,
+            elevations=self.elevations,
         )
         if self.route is None:
             self.status.set("경로를 찾지 못했습니다. 새 지도를 만들어 다시 시도하세요.")
@@ -147,6 +164,8 @@ class WayScannerApp:
 
     def draw(self) -> None:
         self.canvas.delete("all")
+        for (x, y), level in self.elevations.items():
+            self._cell(x, y, HILL_COLORS[level - 1])
         blocked_zone = pathfinder.forbidden_cells(
             GRID_WIDTH,
             GRID_HEIGHT,

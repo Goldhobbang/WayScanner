@@ -15,7 +15,7 @@ pygame에서는 위험 구역을 만든 다음에만 부른다.
 from __future__ import annotations
 
 import heapq
-from typing import Iterable, NamedTuple, Sequence
+from typing import Iterable, Mapping, NamedTuple, Sequence
 
 from hazard_zone import Keepout, contains
 
@@ -43,11 +43,14 @@ def find(
     goal: Sequence[int],
     obstacles: Iterable[Sequence[int]] = (),
     zone: Keepout | None = None,
+    *,
+    elevations: Mapping[Cell, int] | None = None,
 ) -> Route | None:
     """최단 회피 경로를 찾는다. 없으면 None.
 
     이동은 상하좌우만이다.
-    평가값은 f(n) = g(n) + h(n)이고, h(n)은 실제 남은 비용보다 크면 안 된다.
+    이동 비용은 1 + 진입하는 칸의 높이다. 지정하지 않은 칸의 높이는 0이다.
+    이동 비용이 최소 1이므로 맨해튼 거리를 남은 비용의 하한으로 사용한다.
     출발지나 목적지가 막혀 있으면 None이다.
     """
 
@@ -60,6 +63,14 @@ def find(
         or height <= 0
     ):
         raise ValueError("지도 크기는 양의 정수여야 합니다.")
+
+    if elevations is None:
+        elevations = {}
+    if any(
+        isinstance(level, bool) or not isinstance(level, int) or level < 0
+        for level in elevations.values()
+    ):
+        raise ValueError("칸 높이는 0 이상의 정수여야 합니다.")
 
     start_cell = _cell(start, "출발지")
     goal_cell = _cell(goal, "목적지")
@@ -86,7 +97,7 @@ def find(
         for neighbor in _neighbors(current):
             if not _inside_map(neighbor, width, height) or neighbor in blocked:
                 continue
-            next_cost = cost + 1
+            next_cost = cost + 1 + elevations.get(neighbor, 0)
             if next_cost >= cost_so_far.get(neighbor, next_cost + 1):
                 continue
             cost_so_far[neighbor] = next_cost
