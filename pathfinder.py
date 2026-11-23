@@ -17,7 +17,7 @@ from __future__ import annotations
 import heapq
 from typing import Iterable, Mapping, NamedTuple, Sequence
 
-from hazard_zone import Keepout, contains
+from hazard_zone import Keepout, contains, crosses_boundary
 
 
 Cell = tuple[int, int]
@@ -52,6 +52,7 @@ def find(
     이동 비용은 1 + 진입하는 칸의 높이다. 지정하지 않은 칸의 높이는 0이다.
     이동 비용이 최소 1이므로 맨해튼 거리를 남은 비용의 하한으로 사용한다.
     출발지나 목적지가 막혀 있으면 None이다.
+    칸 중심 사이의 이동 선분도 금지 다각형의 경계와 만나면 제외한다.
     """
 
     if (
@@ -99,6 +100,8 @@ def find(
                 continue
             next_cost = cost + 1 + elevations.get(neighbor, 0)
             if next_cost >= cost_so_far.get(neighbor, next_cost + 1):
+                continue
+            if zone is not None and crosses_boundary(zone, current, neighbor):
                 continue
             cost_so_far[neighbor] = next_cost
             came_from[neighbor] = current
