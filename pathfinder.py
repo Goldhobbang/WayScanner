@@ -17,7 +17,7 @@ from __future__ import annotations
 import heapq
 from typing import Iterable, NamedTuple, Sequence
 
-from hazard_zone import Keepout, contains
+from hazard_zone import Keepout, contains, crosses_boundary
 
 
 Cell = tuple[int, int]
@@ -49,6 +49,7 @@ def find(
     이동은 상하좌우만이다.
     평가값은 f(n) = g(n) + h(n)이고, h(n)은 실제 남은 비용보다 크면 안 된다.
     출발지나 목적지가 막혀 있으면 None이다.
+    칸 중심 사이의 이동 선분도 금지 다각형의 경계와 만나면 제외한다.
     """
 
     if (
@@ -88,6 +89,8 @@ def find(
                 continue
             next_cost = cost + 1
             if next_cost >= cost_so_far.get(neighbor, next_cost + 1):
+                continue
+            if zone is not None and crosses_boundary(zone, current, neighbor):
                 continue
             cost_so_far[neighbor] = next_cost
             came_from[neighbor] = current

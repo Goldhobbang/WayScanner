@@ -74,6 +74,28 @@ def contains(zone: Keepout, cell: Sequence[int]) -> bool:
     return _inside_or_boundary(zone.vertices, _cell(cell))
 
 
+def crosses_boundary(zone: Keepout, start: Cell, end: Cell) -> bool:
+    """이동 선분이 금지 다각형의 경계와 만나면 True."""
+
+    if zone.status != "polygon":
+        return False
+    for index, first in enumerate(zone.vertices):
+        second = zone.vertices[(index + 1) % len(zone.vertices)]
+        if _intersects(start, end, first, second):
+            return True
+    return False
+
+
+def _intersects(a: Cell, b: Cell, c: Cell, d: Cell) -> bool:
+    # 외적이 0인 평행 선분도 범위가 겹칠 때만 교차로 본다.
+    for axis in (0, 1):
+        if max(a[axis], b[axis]) < min(c[axis], d[axis]):
+            return False
+        if max(c[axis], d[axis]) < min(a[axis], b[axis]):
+            return False
+    return _cross(a, b, c) * _cross(a, b, d) <= 0 and _cross(c, d, a) * _cross(c, d, b) <= 0
+
+
 def _validate_dimension(value: int | None, label: str) -> None:
     if value is None:
         return
