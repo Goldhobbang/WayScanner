@@ -18,10 +18,7 @@ GRID_HEIGHT = 26
 CELL_SIZE = 24
 START = (1, 1)
 GOAL = (GRID_WIDTH - 2, GRID_HEIGHT - 2)
-HILL_CENTERS = (
-    (GRID_WIDTH // 4, GRID_HEIGHT // 4),
-    (GRID_WIDTH * 3 // 4, GRID_HEIGHT * 3 // 4),
-)
+MAX_HILLS = 20
 HILL_COLORS = ("#fef3c7", "#fde68a", "#fcd34d", "#fbbf24", "#f59e0b")
 
 COLORS = {
@@ -36,13 +33,30 @@ COLORS = {
 }
 
 
-def hill_elevations() -> dict[pathfinder.Cell, int]:
-    elevations = {}
-    for y in range(GRID_HEIGHT):
-        for x in range(GRID_WIDTH):
-            distance = min(abs(x - cx) + abs(y - cy) for cx, cy in HILL_CENTERS)
-            if distance < len(HILL_COLORS):
-                elevations[x, y] = len(HILL_COLORS) - distance
+def hill_elevations(
+    rng: random.Random, count: int, unavailable: set[pathfinder.Cell]
+) -> dict[pathfinder.Cell, int]:
+    candidates = [
+        (x, y)
+        for y in range(GRID_HEIGHT)
+        for x in range(GRID_WIDTH)
+        if (x, y) not in unavailable
+    ]
+    max_height = len(HILL_COLORS)
+    elevations: dict[pathfinder.Cell, int] = {}
+    for _ in range(count):
+        cx, cy = rng.choice(candidates)
+        peak = rng.randint(2, max_height)
+        # 봉우리 사이를 띄워 낮은 언덕도 주변보다 높게 유지한다.
+        candidates = [
+            (x, y) for x, y in candidates if abs(x - cx) + abs(y - cy) >= max_height
+        ]
+        for y in range(max(0, cy - peak + 1), min(GRID_HEIGHT, cy + peak)):
+            for x in range(max(0, cx - peak + 1), min(GRID_WIDTH, cx + peak)):
+                cell = (x, y)
+                level = peak - abs(x - cx) - abs(y - cy)
+                if level > 0 and cell not in unavailable:
+                    elevations[cell] = max(level, elevations.get(cell, 0))
     return elevations
 
 
@@ -55,8 +69,9 @@ class WayScannerApp:
         self.zone = hazard_zone.Keepout("none", (), ())
         self.hazards: list[tuple[int, int]] = []
         self.obstacles: set[tuple[int, int]] = set()
-        self.elevations = hill_elevations()
+        self.elevations: dict[pathfinder.Cell, int] = {}
         self.route: pathfinder.Route | None = None
+        self.hill_count = tk.IntVar(value=2)
         self.status = tk.StringVar(value="새 지도를 생성했습니다. 경로 찾기를 눌러 보세요.")
         self.metrics = tk.StringVar(value="경로 정보가 여기에 표시됩니다.")
 
@@ -81,31 +96,41 @@ class WayScannerApp:
             text="위험 구역과 장애물을 피해\n목적지까지 가는 경로를 찾습니다.",
             justify="left",
         ).grid(row=1, column=0, sticky="w", pady=(0, 12))
+        terrain = ttk.Frame(panel)
+        terrain.grid(row=2, column=0, sticky="w", pady=(0, 8))
+        ttk.Label(terrain, text="언덕 개수").grid(row=0, column=0, padx=(0, 8))
+        ttk.Combobox(
+            terrain,
+            textvariable=self.hill_count,
+            values=tuple(range(MAX_HILLS + 1)),
+            state="readonly",
+            width=4,
+        ).grid(row=0, column=1)
         ttk.Button(panel, text="새 지도", command=self.new_map).grid(
-            row=2, column=0, sticky="ew", pady=3
-        )
-        ttk.Button(panel, text="경로 찾기", command=self.find_path).grid(
             row=3, column=0, sticky="ew", pady=3
         )
-        ttk.Separator(panel).grid(row=4, column=0, sticky="ew", pady=12)
+        ttk.Button(panel, text="경로 찾기", command=self.find_path).grid(
+            row=4, column=0, sticky="ew", pady=3
+        )
+        ttk.Separator(panel).grid(row=5, column=0, sticky="ew", pady=12)
         ttk.Label(panel, textvariable=self.status, wraplength=220, justify="left").grid(
-            row=5, column=0, sticky="w", pady=4
+            row=6, column=0, sticky="w", pady=4
         )
         ttk.Label(panel, textvariable=self.metrics, wraplength=220, justify="left").grid(
-            row=6, column=0, sticky="w", pady=8
+            row=7, column=0, sticky="w", pady=8
         )
-        ttk.Separator(panel).grid(row=7, column=0, sticky="ew", pady=8)
+        ttk.Separator(panel).grid(row=8, column=0, sticky="ew", pady=8)
         ttk.Label(
             panel,
             text="배터리 잔량: 예측 불가\n학습된 예측 모델이 아직 없습니다.",
             foreground="#64748b",
             justify="left",
-        ).grid(row=8, column=0, sticky="w", pady=4)
+        ).grid(row=9, column=0, sticky="w", pady=4)
         ttk.Label(
             panel,
             text="범례\n■ 위험 구역  ■ 장애물\n■ 경로      ■ 출발 / 목적지\n■ 언덕 (색이 진할수록 높음)",
             justify="left",
-        ).grid(row=9, column=0, sticky="w", pady=(14, 0))
+        ).grid(row=10, column=0, sticky="w", pady=(14, 0))
 
         self.new_map()
 
@@ -135,8 +160,10 @@ class WayScannerApp:
             if (x, y) not in forbidden and (x, y) not in (START, GOAL)
         ]
         self.obstacles = set(rng.sample(obstacle_candidates, min(34, len(obstacle_candidates))))
+        hill_count = self.hill_count.get()
+        self.elevations = hill_elevations(rng, hill_count, forbidden | self.obstacles | {START, GOAL})
         self.route = None
-        self.status.set("지도와 위험 점을 새로 만들었습니다.")
+        self.status.set(f"새 지도를 만들었습니다. 언덕 {hill_count}개")
         self.metrics.set("경로 정보가 여기에 표시됩니다.")
         self.draw()
 
